@@ -26,13 +26,13 @@ my $filename = "/tmp/hedgehog.rpt";
 my $SELF = basename(__FILE__);
 
 my $host = "127.0.0.1";
-my $from='ops@werty.com';
-my $smtphost='cluster8.eu.messagelabs.com';
-my $to='ops@qwert.com';
+my $from='netops@mon-3.bfn.uk.erwer.net';
+my $smtphost='localhost';
+my $to='ops@erwer.com';
 my $content;
 
 my $SRVquery;
-my $dns = uc('ns1.centralnic.net'); 
+my $dns = uc('ns1.erwer.net'); 
 
 my $database = "hedgehog";
 my $table;
@@ -80,6 +80,7 @@ my $ipv6;
 my $ipprot;
 my $gi;
 my $giorg;
+my $giasnum;
 my $r;
 
 my ($debug, $noalerts, $help, $noisy, $networks);
@@ -125,8 +126,10 @@ if ($ipv6) {
 
 if ($ipv6) {
         $gi = Geo::IP->open( "/usr/share/GeoIP/GeoLiteCityv6.dat", GEOIP_STANDARD ) or die;
+        $giasnum = Geo::IP->open( "/usr/share/GeoIP/GeoIPASNumv6.dat", GEOIP_STANDARD ) or die;
 } else {
         $gi = Geo::IP->open( "/usr/share/GeoIP/GeoLiteCity.dat", GEOIP_STANDARD ) or die;
+        $giasnum = Geo::IP->open( "/usr/share/GeoIP/GeoIPASNum.dat", GEOIP_STANDARD ) or die;
         $giorg = Geo::IP->open("/usr/share/GeoIP/GeoIPOrg.dat", GEOIP_STANDARD ) or die;
 }
 
@@ -158,7 +161,7 @@ foreach $cloud (@cloud) {
                 } else {
                 # Query SRV records
                 $res = Net::DNS::Resolver->new( nameservers => [$dns], tcp_timeout => $timeout, udp_timeout => $timeout, retry => 3, 'persistent_tcp' => 1, 'persistent_udp' => 1, 'debug' => $noisy );
-                $SRVquery = sprintf("_dns._udp.%s.dns.centralnic.net", $cloud);
+                $SRVquery = sprintf("_dns._udp.%s.dns.erwer.net", $cloud);
                 @hosts = SRVquery ( $SRVquery, $dns );
         }
 
@@ -210,27 +213,26 @@ foreach $cloud (@cloud) {
                 $value = $results->{value};
                 $node_region = $results->{region};
 
+                undef $asnumber;
                 if ($ipv6) {
                         $r = $gi->record_by_name_v6($key2);
+                        $asnumber = $giasnum->name_by_addr_v6($key2);
                 } else {
-                        undef $org;
                         $r = $gi->record_by_name($key2);
-                        $org = $giorg->org_by_name($key2);
+                        $asnumber = $giasnum->name_by_addr($key2);
+                        #$org = $giorg->org_by_name($key2);
                 }
 
                 if ($r) {
                         undef $country;
                         undef $region;
                         undef $city;
-                        undef $asnumber;
+                        undef $org;
                         my $response = whoisip_query($key2);
                         foreach (sort keys(%{$response}) ) {
-                                $isp = $response->{$_} if ( $_ =~ /netname|org-name|organization/i );
-                                $asnumber = $response->{$_} if ( $_ =~ /origin/i );
+                                $org = $response->{$_} if ( $_ =~ /netname|org-name|organization/i );
+                                #$asnumber = $response->{$_} if ( $_ =~ /origin/i );
                                 }
-                        if ($ipv6) {
-                                $org = $isp;
-                        }
                         $country = "" if !($country);
                         $region = "" if !($region);
                         $city = "" if !($city);
@@ -275,7 +277,7 @@ format TOP =
 
                                 @<<<<< Cloud-@< @<<<<<<<<<<<<<<<<<<
 $nameserver, $cloud, $node_region
-  Network                Value             Country           Region            City              ISP              ASNumber
+  Network                Value             Country           Region            City              ISP / Org        ASNumber
   ---------------------  ----------------  ----------------  ----------------  ----------------  ---------------- ----------------
 .
 
@@ -290,6 +292,8 @@ print "@log";
     close($fh);
 
         print $content;
+
+sleep 60;
 
         my $subject=sprintf("%s %s Anycast Busiest Client Subnets %s-%s \n", lc(hostname()), $ipprot, $rmonth, $year);
 
